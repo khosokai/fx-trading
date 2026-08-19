@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>バックテスト レポートビューア</title>
+  <link rel="stylesheet" href="../admin/public/uplot.min.css" />
+  <style>
+    :root { color-scheme: light dark; }
+    body { font-family: -apple-system, "Hiragino Sans", sans-serif; margin: 1.5rem; max-width: 1100px; }
+    h1 { font-size: 1.3rem; }
+    table { border-collapse: collapse; margin: .75rem 0; font-size: .85rem; }
+    th, td { border: 1px solid color-mix(in srgb, currentColor 25%, transparent); padding: .3rem .6rem; text-align: right; }
+    th:first-child, td:first-child { text-align: left; }
+    .neg { color: #d33; }
+    .pos { color: #2a7; }
+    #chart { margin-top: 1rem; }
+    .muted { opacity: .65; font-size: .85rem; }
+  </style>
+</head>
+<body>
+  <h1>バックテスト レポートビューア</h1>
+  <p><input type="file" id="file" accept=".json" multiple /> <span class="muted">reports/*.json を選択 (複数可)</span></p>
+  <div id="out"></div>
+  <script src="../admin/public/uplot.min.js"></script>
+  <script>
+    const METRIC_LABELS = {
+      totalReturnPct: "総リターン%", cagrPct: "年率%", sharpe: "シャープ", maxDrawdownPct: "最大DD%",
+      tradeCount: "取引数", winRatePct: "勝率%", profitFactor: "PF",
+      expectancyPips: "期待値pips", avgSpreadPips: "平均スプレッドpips",
+      maxConsecutiveLosses: "最大連敗", periodDays: "期間(日)",
+    };
+
+    document.getElementById("file").addEventListener("change", async (e) => {
+      const out = document.getElementById("out");
+      out.innerHTML = "";
+      for (const f of e.target.files) {
+        const report = JSON.parse(await f.text());
+        renderReport(out, report);
+      }
+    });
+
+    function renderReport(out, r) {
+      const section = document.createElement("section");
+      section.innerHTML = `<h2>${r.strategyId} — ${r.instrument} (${r.timeframe})</h2>
+        <p class="muted">生成: ${r.generatedAt}</p>`;
+
+      // スプレッド感度テーブル
+      const table = document.createElement("table");
+      const markups = Object.keys(r.metricsByMarkup);
+      const keys = Object.keys(METRIC_LABELS);
+      table.innerHTML =
+        `<tr><th>指標</th>${markups.map((m) => `<th>${m}pips</th>`).join("")}</tr>` +
+        keys.map((k) =>
+          `<tr><td>${METRIC_LABELS[k]}</td>${markups.map((m) => {
+            const v = r.metricsByMarkup[m][k];
+            const num = typeof v === "number" ? v : 0;
+            const cls = (k === "totalReturnPct" || k === "expectancyPips" || k === "sharpe")
+              ? (num >= 0 ? "pos" : "neg") : "";
+            return `<td class="${cls}">${fmt(v)}</td>`;
+          }).join("")}</tr>`
+        ).join("");
+      section.appendChild(table);
+
+      // エクイティカーブ
+      if (r.equity?.length > 1) {
+        const div = document.createElement("div");
+        div.id = "chart";
+        section.appendChild(div);
+        const data = [r.equity.map((p) => p.time / 1000), r.equity.map((p) => p.value)];
+        new uPlot({
+          width: Math.min(1050, document.body.clientWidth - 40),
+          height: 300,
+          title: "エクイティカーブ (+0.0pips)",
+          series: [{}, { label: "equity", stroke: "#4a90d9", width: 1.5 }],
+          axes: [{}, { size: 80 }],
+        }, data, div);
+      }
+
+      // WFA
+      if (r.walkForward) {
+        const wfa = document.createElement("div");
+        const a = r.walkForward.aggregate;
+        wfa.innerHTML = `<h3>ウォークフォワード (OOS連結)</h3>
+          <p>シャープ: <b>${a.sharpe.toFixed(2)}</b> / 総リターン: ${a.totalReturnPct.toFixed(1)}% /
+          最大DD: -${a.maxDrawdownPct.toFixed(1)}% / 期待値: ${a.expectancyPips.toFixed(2)}pips</p>`;
+        const wt = document.createElement("table");
+        wt.innerHTML = `<tr><th>検証期間</th><th>採用</th><th>学習シャープ</th><th>検証シャープ</th><th>検証リターン%</th></tr>` +
+          r.walkForward.windows.map((w) =>
+            `<tr><td>${iso(w.testFrom)} 〜 ${iso(w.testTo)}</td><td>${w.bestId}</td>
+             <td>${w.trainSharpe.toFixed(2)}</td>
+             <td class="${w.testSharpe >= 0 ? "pos" : "neg"}">${w.testSharpe.toFixed(2)}</td>
+             <td class="${w.testReturnPct >= 0 ? "pos" : "neg"}">${w.testReturnPct.toFixed(1)}</td></tr>`
+          ).join("");
+        wfa.appendChild(wt);
+        section.appendChild(wfa);
+      }
+      out.appendChild(section);
+    }
+
+    const fmt = (v) => typeof v === "number" ? (Number.isInteger(v) ? v : v.toFixed(2)) : String(v);
+    const iso = (ms) => new Date(ms).toISOString().slice(0, 10);
+  </script>
+</body>
+</html>

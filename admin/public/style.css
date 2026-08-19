@@ -1,0 +1,30 @@
+:root { color-scheme: light dark; --accent: #4a90d9; --danger: #d33; --ok: #2a7; }
+* { box-sizing: border-box; }
+body { font-family: -apple-system, "Hiragino Sans", sans-serif; margin: 0; }
+header { padding: .75rem 1.25rem; border-bottom: 1px solid color-mix(in srgb, currentColor 20%, transparent); display: flex; align-items: center; gap: 1.5rem; flex-wrap: wrap; }
+header h1 { font-size: 1.1rem; margin: 0; }
+nav { display: flex; gap: 1rem; }
+nav a { text-decoration: none; color: var(--accent); }
+nav a.active { font-weight: bold; text-decoration: underline; }
+main { padding: 1.25rem; max-width: 1150px; margin: 0 auto; }
+table { border-collapse: collapse; width: 100%; font-size: .82rem; margin: .75rem 0; }
+th, td { border: 1px solid color-mix(in srgb, currentColor 22%, transparent); padding: .3rem .55rem; text-align: right; white-space: nowrap; }
+th:first-child, td:first-child { text-align: left; }
+.neg { color: var(--danger); }
+.pos { color: var(--ok); }
+.banner { padding: .4rem .8rem; border-radius: 6px; font-weight: bold; background: var(--danger); color: white; }
+.hidden { display: none; }
+.cards { display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem; }
+.card { border: 1px solid color-mix(in srgb, currentColor 22%, transparent); border-radius: 8px; padding: .75rem 1rem; min-width: 150px; }
+.card .label { font-size: .75rem; opacity: .7; }
+.card .value { font-size: 1.3rem; font-weight: bold; }
+.card.warn .value { color: var(--danger); }
+button { padding: .45rem .9rem; border-radius: 6px; border: 1px solid color-mix(in srgb, currentColor 30%, transparent); background: transparent; cursor: pointer; font-size: .9rem; }
+button.danger { background: var(--danger); color: white; border: none; }
+button.primary { background: var(--accent); color: white; border: none; }
+textarea { width: 100%; min-height: 320px; font-family: ui-monospace, monospace; font-size: .82rem; }
+input[type="text"], input[type="password"] { padding: .35rem .5rem; border-radius: 4px; border: 1px solid color-mix(in srgb, currentColor 30%, transparent); }
+.muted { opacity: .65; font-size: .85rem; }
+.gauge { height: 14px; background: color-mix(in srgb, currentColor 12%, transparent); border-radius: 7px; overflow: hidden; margin-top: .3rem; }
+.gauge > div { height: 100%; background: var(--accent); }
+pre.diff { background: color-mix(in srgb, currentColor 8%, transparent); padding: .6rem; border-radius: 6px; overflow-x: auto; font-size: .78rem; }

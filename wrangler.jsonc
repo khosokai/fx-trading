@@ -1,0 +1,35 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "fx-trading-bot",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-08-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "triggers": {
+    // UTC指定。毎分のボットtick / 5分ごとのスーパーバイザ監視
+    "crons": ["* * * * *", "*/5 * * * *"]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "fx-trading-bot",
+      // デプロイ前に `wrangler d1 create fx-trading-bot` で発行したIDに差し替える
+      "database_id": "00000000-0000-0000-0000-000000000000"
+    }
+  ],
+  "assets": {
+    "directory": "admin/public",
+    "binding": "ASSETS"
+  },
+  "vars": {
+    // "true"にすると実発注。まずはドライランで運用インフラを検証する
+    "BOT_LIVE": "false",
+    // "practice" | "live" — APIの向き先。liveへの切替は昇格チェックリスト達成後のみ
+    "OANDA_ENV": "practice"
+  },
+  "observability": {
+    "enabled": true
+  }
+  // Secrets (wrangler secret put で登録):
+  //   OANDA_API_TOKEN, OANDA_ACCOUNT_ID, NOTIFY_WEBHOOK_URL,
+  //   HEALTHCHECK_URL_BOT, HEALTHCHECK_URL_SUPERVISOR, ADMIN_TOKEN(Access未設定時のフォールバック)
+}

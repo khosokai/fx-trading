@@ -48,6 +48,10 @@ export const STRATEGY_REGISTRY: Record<string, StrategyDef> = {
       exitPeriod: { min: 3, max: 100 },
       atrPeriod: { min: 5, max: 50 },
       slAtrMult: { min: 0.5, max: 5 },
+      // 任意のエントリーフィルタ (省略可)
+      trendEmaPeriod: { min: 10, max: 500 },
+      adxPeriod: { min: 5, max: 50 },
+      adxMin: { min: 5, max: 50 },
     },
     build: (p) =>
       makeDonchian({
@@ -56,6 +60,15 @@ export const STRATEGY_REGISTRY: Record<string, StrategyDef> = {
         exitPeriod: num(p, "exitPeriod", { min: 3, max: 100 }),
         atrPeriod: num(p, "atrPeriod", { min: 5, max: 50 }),
         slAtrMult: num(p, "slAtrMult", { min: 0.5, max: 5 }),
+        ...(p["trendEmaPeriod"] !== undefined
+          ? { trendEmaPeriod: num(p, "trendEmaPeriod", { min: 10, max: 500 }) }
+          : {}),
+        ...(p["adxPeriod"] !== undefined
+          ? {
+              adxPeriod: num(p, "adxPeriod", { min: 5, max: 50 }),
+              adxMin: num(p, "adxMin", { min: 5, max: 50 }),
+            }
+          : {}),
       }),
   },
   sessionBreakout: {

@@ -7,7 +7,7 @@ import type { Strategy } from "../core/strategy.ts";
 import { LocalChunkStore } from "../data/store.ts";
 import { makeBbRsiReversion } from "../strategies/bbRsiReversion.ts";
 import { makeDonchian } from "../strategies/donchian.ts";
-import { makeSessionBreakout } from "../strategies/sessionBreakout.ts";
+// sessionBreakoutは第3ラウンドで再設計予定 (docs/research.md)
 
 /**
  * 戦略研究ランナー: WFA (ウォークフォワード分析) を両ペアで実行する。
@@ -36,30 +36,63 @@ const WFA = { trainDays: 365, testDays: 90 };
 const INSTRUMENTS = ["USD_JPY", "EUR_USD"];
 const DATA_DIR = new URL("../../data/candles", import.meta.url).pathname;
 
-/** WFAの候補セット (学習期間でこの中からシャープ最良が選ばれる) */
-function candidateSets(): { name: string; timeframe: Timeframe; candidates: Strategy[] }[] {
+interface CandidateSet {
+  name: string;
+  timeframe: Timeframe;
+  candidates: Strategy[];
+  /** セット固有のエンジン設定 (セッション限定等)。markupとは合成される */
+  configOverrides?: Partial<BacktestConfig>;
+}
+
+const DONCHIAN_PERIODS: [number, number][] = [
+  [20, 10],
+  [40, 20],
+  [80, 40],
+];
+
+function donchianSet(
+  name: string,
+  timeframe: Timeframe,
+  extra: Partial<Parameters<typeof makeDonchian>[0]> = {},
+): CandidateSet {
+  return {
+    name,
+    timeframe,
+    candidates: DONCHIAN_PERIODS.map(([e, x]) =>
+      makeDonchian({
+        timeframe,
+        entryPeriod: e,
+        exitPeriod: x,
+        atrPeriod: 14,
+        slAtrMult: 2,
+        ...extra,
+      }),
+    ),
+  };
+}
+
+/**
+ * WFAの候補セット (学習期間でこの中からシャープ最良が選ばれる)。
+ * 第2ラウンド (2026-08-20 事前登録、docs/research.md):
+ * R2-A: H1化でコスト比改善 / R2-B: EMA200方向フィルタ / R2-C: ADX(14)≥20 /
+ * R2-D: BB+RSI逆張りを東京セッション限定
+ * フィルタ閾値 (EMA200, ADX14≥20) は標準値で固定。スイープしない。
+ */
+function candidateSets(): CandidateSet[] {
   return [
+    // R2-A
+    donchianSet("R2-A_donchian_H1", "H1"),
+    // R2-B
+    donchianSet("R2-B_donchian_H1_ema200", "H1", { trendEmaPeriod: 200 }),
+    donchianSet("R2-B_donchian_M15_ema200", "M15", { trendEmaPeriod: 200 }),
+    // R2-C
+    donchianSet("R2-C_donchian_H1_adx", "H1", { adxPeriod: 14, adxMin: 20 }),
+    donchianSet("R2-C_donchian_M15_adx", "M15", { adxPeriod: 14, adxMin: 20 }),
+    // R2-D
     {
-      name: "donchian",
+      name: "R2-D_bbRsi_M15_tokyo",
       timeframe: "M15",
-      candidates: [
-        [20, 10],
-        [40, 20],
-        [80, 40],
-      ].map(([e, x]) =>
-        makeDonchian({ timeframe: "M15", entryPeriod: e!, exitPeriod: x!, atrPeriod: 14, slAtrMult: 2 }),
-      ),
-    },
-    {
-      name: "sessionBreakout",
-      timeframe: "M15",
-      candidates: [1.0, 1.5, 2.0].map((tpR) =>
-        makeSessionBreakout({ timeframe: "M15", minRangePips: 20, maxRangePips: 80, maxSlPips: 40, tpR }),
-      ),
-    },
-    {
-      name: "bbRsi",
-      timeframe: "M15",
+      configOverrides: { sessionFilter: ["tokyo"] },
       candidates: [
         [2, 30, 70],
         [2.5, 25, 75],
@@ -125,6 +158,7 @@ async function main(): Promise<void> {
       for (const markup of [0, ...ACCEPTANCE.markupsToSurvive]) {
         const config: BacktestConfig = {
           ...DEFAULT_CONFIG,
+          ...(set.configOverrides ?? {}),
           spreadMarkupPips: markup,
           ...(usdJpyM1
             ? { pipValueJpyAt: makeUsdJpyLookup(usdJpyM1) }

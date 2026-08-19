@@ -30,6 +30,10 @@ OANDA v20 API による FX 自動デイトレードシステム。TypeScript一�
    Access移行はJWT署名検証の実装が前提)
 9. **unknown intentの解決は永続台帳 (client_order_id) に対して行う**。
    揮発的なAPIレスポンスで orphan 判定しない (誤「未達」通知の回帰テストあり)
+10. **htfを使う戦略を追加する前に必ず**: 本番tickは現在 `htf: {}` を渡している
+   (tradingBot)。Strategyに必要HTFを宣言させて本番でaggregateClosedから構築するか、
+   宣言があるのに空なら大声で失敗する仕掛けを先に入れること
+   (バックテストでは見えて本番では静かに空になるパリティ地雷)
 
 ## 構成の要点
 

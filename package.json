@@ -1,0 +1,30 @@
+{
+  "name": "fx-trading",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "OANDA v20 API 外国為替FX 自動デイトレードシステム",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit && tsc -p worker --noEmit",
+    "test": "node --test 'test/**/*.test.ts'",
+    "worker:dev": "wrangler dev --test-scheduled",
+    "worker:deploy": "wrangler deploy",
+    "worker:tail": "wrangler tail",
+    "data:download": "node --env-file-if-exists=.env scripts/downloadDukascopy.ts",
+    "backtest": "node --env-file-if-exists=.env src/examples/backtest.ts",
+    "research": "node --env-file-if-exists=.env src/examples/research.ts",
+    "verify:parity": "node --env-file-if-exists=.env src/examples/verifyParity.ts",
+    "compare:feeds": "node --env-file-if-exists=.env src/examples/compareFeeds.ts"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260818.1",
+    "@types/node": "^24.0.0",
+    "dukascopy-node": "^1.50.0",
+    "typescript": "^5.9.0",
+    "uplot": "^1.6.32",
+    "wrangler": "^4.123.0"
+  }
+}

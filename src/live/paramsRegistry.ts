@@ -22,7 +22,7 @@ interface StrategyDef {
   schema: Record<string, NumSpec | "timeframe">;
 }
 
-const TIMEFRAMES: Timeframe[] = ["M1", "M5", "M15", "H1"];
+const TIMEFRAMES: Timeframe[] = ["M1", "M5", "M15", "H1", "H4"];
 
 function num(params: Record<string, number | string>, key: string, spec: NumSpec): number {
   const v = Number(params[key]);

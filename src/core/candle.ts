@@ -19,13 +19,16 @@ export interface BidAskCandle {
   volume: number;
 }
 
-export type Timeframe = "M1" | "M5" | "M15" | "H1";
+export type Timeframe = "M1" | "M5" | "M15" | "H1" | "H4";
 
 export const TF_MS: Record<Timeframe, number> = {
   M1: 60_000,
   M5: 300_000,
   M15: 900_000,
   H1: 3_600_000,
+  // H4はUTC整列 (0,4,8,...時)。OANDAのH4はNY基準だが、パリティ原則により
+  // 本番もバックテストもM1から自前集計するため整列方式は自己完結する
+  H4: 14_400_000,
 };
 
 /** 仲値OHLC。指標計算はスプレッドのノイズを避けるため原則Midで行う */

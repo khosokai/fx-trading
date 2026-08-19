@@ -5,9 +5,8 @@ import { formatMetrics, type Metrics } from "../backtest/metrics.ts";
 import { walkForward } from "../backtest/walkForward.ts";
 import type { Strategy } from "../core/strategy.ts";
 import { LocalChunkStore } from "../data/store.ts";
-import { makeBbRsiReversion } from "../strategies/bbRsiReversion.ts";
 import { makeDonchian } from "../strategies/donchian.ts";
-// sessionBreakoutは第3ラウンドで再設計予定 (docs/research.md)
+import { makeSessionBreakout } from "../strategies/sessionBreakout.ts";
 
 /**
  * 戦略研究ランナー: WFA (ウォークフォワード分析) を両ペアで実行する。
@@ -73,42 +72,31 @@ function donchianSet(
 
 /**
  * WFAの候補セット (学習期間でこの中からシャープ最良が選ばれる)。
- * 第2ラウンド (2026-08-20 事前登録、docs/research.md):
- * R2-A: H1化でコスト比改善 / R2-B: EMA200方向フィルタ / R2-C: ADX(14)≥20 /
- * R2-D: BB+RSI逆張りを東京セッション限定
- * フィルタ閾値 (EMA200, ADX14≥20) は標準値で固定。スイープしない。
+ * 第3ラウンド (2026-08-20 事前登録、docs/research.md):
+ * R3-A: sessionBreakout v2 — ATRバッファ0.3 / ロンドン初動(8:00-12:00現地)限定 /
+ *        NY12:00現地で強制フラット。tpR {1.5, 2.5} のみ候補
+ * R3-B: Donchian H4 (フィルタなし) — コスト比の決定的改善を検証
+ * 過去ラウンドのセットは docs/research.md の検証ログを参照。
  */
 function candidateSets(): CandidateSet[] {
   return [
-    // R2-A
-    donchianSet("R2-A_donchian_H1", "H1"),
-    // R2-B
-    donchianSet("R2-B_donchian_H1_ema200", "H1", { trendEmaPeriod: 200 }),
-    donchianSet("R2-B_donchian_M15_ema200", "M15", { trendEmaPeriod: 200 }),
-    // R2-C
-    donchianSet("R2-C_donchian_H1_adx", "H1", { adxPeriod: 14, adxMin: 20 }),
-    donchianSet("R2-C_donchian_M15_adx", "M15", { adxPeriod: 14, adxMin: 20 }),
-    // R2-D
     {
-      name: "R2-D_bbRsi_M15_tokyo",
+      name: "R3-A_sessbrk_v2_M15",
       timeframe: "M15",
-      configOverrides: { sessionFilter: ["tokyo"] },
-      candidates: [
-        [2, 30, 70],
-        [2.5, 25, 75],
-      ].map(([sigma, lo, hi]) =>
-        makeBbRsiReversion({
+      candidates: [1.5, 2.5].map((tpR) =>
+        makeSessionBreakout({
           timeframe: "M15",
-          bbPeriod: 20,
-          bbSigma: sigma!,
-          rsiPeriod: 14,
-          rsiLower: lo!,
-          rsiUpper: hi!,
-          atrPeriod: 14,
-          slAtrMult: 1.5,
+          minRangePips: 20,
+          maxRangePips: 80,
+          maxSlPips: 40,
+          tpR,
+          atrBufferMult: 0.3,
+          entryEndLondonMin: 12 * 60,
+          exitNyMin: 12 * 60,
         }),
       ),
     },
+    donchianSet("R3-B_donchian_H4", "H4"),
   ];
 }
 

@@ -225,6 +225,26 @@ export class D1BotDb implements BotDb {
     return { version: row.version, doc: JSON.parse(row.json) as ParamsDoc };
   }
 
+  /**
+   * 当月のUSD建て取引量 (新規+決済の両フィルを合算 = OANDAのGold判定と同じ数え方)。
+   * 台帳からのSUM導出のみ。加算カウンタは持たない (並行tick二重加算の排除)。
+   */
+  async monthlyUsdNotional(month: string): Promise<number> {
+    const row = await this.db
+      .prepare(
+        `SELECT SUM(CASE
+                  WHEN instrument LIKE 'USD/_%' ESCAPE '/' THEN ABS(units)
+                  WHEN instrument LIKE '%/_USD' ESCAPE '/' THEN ABS(units) * price
+                  ELSE 0
+                END) AS usd
+         FROM oanda_transactions
+         WHERE type = 'ORDER_FILL' AND ts LIKE ?`,
+      )
+      .bind(`${month}%`)
+      .first<{ usd: number | null }>();
+    return row?.usd ?? 0;
+  }
+
   /** パラメータ保存: version+1で本体を更新し、履歴に追記する */
   async saveParams(doc: ParamsDoc, note?: string): Promise<number> {
     const current = await this.db

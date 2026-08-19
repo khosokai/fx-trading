@@ -6,7 +6,9 @@
  * nodejs_compat により Secrets/Vars は process.env にも入るため、
  * src/ 配下のコードは Node / Workers 両方でそのまま動く。
  */
+import { goldPaceWarnDayKey, goldPaceWarning } from "../src/live/goldPace.ts";
 import { runOnce } from "../src/live/tradingBot.ts";
+import { STATE_KEYS } from "../src/safety/state.ts";
 import { OandaClient, type OandaEnv } from "../src/oanda/client.ts";
 import { loadSafetyConfig } from "../src/safety/config.ts";
 import { KillSwitch, type TradingActions } from "../src/safety/killSwitch.ts";
@@ -117,6 +119,21 @@ export default {
             ? { healthcheckUrl: env.HEALTHCHECK_URL_SUPERVISOR }
             : {}),
         });
+        // Gold維持ペース警告 (BOT_LIVE時のみ・1日1回)。情報提供に徹し、
+        // ノルマ消化のための発注は人間が判断する
+        if (env.BOT_LIVE === "true") {
+          const now = Date.now();
+          const dayKey = goldPaceWarnDayKey(now);
+          if ((await store.get(STATE_KEYS.goldPaceWarnDay)) !== dayKey) {
+            const month = new Date(now).toISOString().slice(0, 7);
+            const usd = await new D1BotDb(env.DB).monthlyUsdNotional(month);
+            const warning = goldPaceWarning({ usdNotional: usd, nowMs: now });
+            if (warning) {
+              await notifier.warn(warning);
+              await store.set(STATE_KEYS.goldPaceWarnDay, dayKey);
+            }
+          }
+        }
         break;
       }
       default:

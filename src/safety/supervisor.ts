@@ -1,3 +1,4 @@
+import { OandaApiError } from "../httpClient.ts";
 import type { OandaClient } from "../oanda/client.ts";
 import type { KillSwitch } from "./killSwitch.ts";
 import type { Notifier } from "./notifier.ts";
@@ -43,6 +44,16 @@ export async function superviseOnce(deps: SupervisorDeps, nowMs: number = Date.n
     state.consecutiveFailures = 0;
   } catch (err) {
     state.consecutiveFailures += 1;
+    const is401 = err instanceof OandaApiError && err.httpStatus === 401;
+    // 401への遷移は即時に緊急通知 (Gold降格・トークン失効・残高25万円未満のいずれか。
+    // OANDA JP仕様: Gold喪失でトークンは本番・デモとも無効化されBotは完全停止する)
+    if (is401 && !(state.lastStatus ?? "").includes("HTTP 401")) {
+      await notifier.critical(
+        "OANDA APIトークンが拒否されました (401)。Gold降格 / トークン失効 / 残高25万円未満の可能性。" +
+          "Botは停止状態です。ポジションはサーバー側SL/TPでのみ保護されています — " +
+          "OANDAの取引画面 (fxTrade) で建玉を直接確認・管理してください。",
+      );
+    }
     state.lastStatus = `error: ${err instanceof Error ? err.message : err}`;
     if (state.consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
       await notifier.warn(

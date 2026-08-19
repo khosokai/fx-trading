@@ -27,6 +27,7 @@ export const STATE_KEYS = {
   orderTimestamps: "orderTimestamps",
   supervisor: "supervisor",
   lastTransactionId: "lastTransactionId",
+  goldPaceWarnDay: "goldPaceWarnDay",
 } as const;
 
 export interface KillSwitchState {

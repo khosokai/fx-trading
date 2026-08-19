@@ -41,3 +41,7 @@ OANDA v20 API による FX 自動デイトレードシステム。TypeScript一�
 2026/9 にOANDA本番口座開設予定 (初期緩和 = 開設月〜翌月末Gold付与)。
 それまでに戦略研究 (Phase 3) を完了し、開設後にfxpracticeで14日チェックリスト
 (`docs/operations.md`) → 10月からlive想定。
+
+OANDA JP確認済み (2026-08-20): 口座開設前のfxpractice API接続は不可 (前倒し不能)。
+API維持には**毎月50万USDの実取引が必須** (Gold喪失で本番・デモともトークン無効化
+= Bot完全停止)。詳細は `docs/operations.md` のGoldステータス維持セクション。

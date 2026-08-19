@@ -64,10 +64,14 @@ CREATE TABLE oanda_transactions (
   pl REAL,
   financing REAL,
   reason TEXT,
+  -- unknown intentの解決は揮発的なレスポンスではなく、この永続カラムに対して行う
+  -- (カーソル前進後にWorkerが死んでも誤orphan判定にならない)
+  client_order_id TEXT,
   raw TEXT NOT NULL
 );
 CREATE INDEX idx_txn_ts ON oanda_transactions (ts);
 CREATE INDEX idx_txn_type ON oanda_transactions (type);
+CREATE INDEX idx_txn_client_order ON oanda_transactions (client_order_id);
 
 -- 発注インテント。POSTの「前」に必ずINSERTする (二重発注対策の要)
 CREATE TABLE orders_intent (

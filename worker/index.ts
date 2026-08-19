@@ -84,6 +84,7 @@ export default {
           db: new D1BotDb(env.DB),
           store,
           riskManager: new RiskManager(config, store),
+          safetyConfig: config,
           notifier,
           live: env.BOT_LIVE === "true",
         });

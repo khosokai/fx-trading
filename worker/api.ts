@@ -24,14 +24,25 @@ export interface ApiDeps {
   adminToken: string | undefined;
 }
 
+/**
+ * 認証 — fail-closed。
+ * ADMIN_TOKEN との Bearer 一致のみを認証とみなす。ADMIN_TOKEN未設定なら全拒否
+ * (設定漏れでworkers.dev上に公開される事故を構造的に防ぐ)。
+ *
+ * ⚠️ Cf-Access-Jwt-Assertion ヘッダの「存在」は認証に使わない — 誰でも偽装できる。
+ * Cloudflare Accessへ移行する際は、WebCrypto (crypto.subtle) でJWTのRS256署名を
+ * チームドメインのJWKSに対して検証する実装をこの関数に追加してから
+ * トークン要求を緩めること。それまではAccess配下でもADMIN_TOKENを併用する。
+ */
 function requireAuth(request: Request, deps: ApiDeps): Response | null {
-  // Cloudflare Accessを通過していればJWTヘッダが付く。
-  // Access未設定環境 (ローカルdev等) はADMIN_TOKENで代替する。
-  if (request.headers.get("Cf-Access-Jwt-Assertion")) return null;
-  if (deps.adminToken) {
-    const auth = request.headers.get("Authorization");
-    if (auth === `Bearer ${deps.adminToken}`) return null;
+  if (!deps.adminToken) {
+    return Response.json(
+      { error: "ADMIN_TOKEN未設定のため全リクエストを拒否します (fail-closed)" },
+      { status: 503 },
+    );
   }
+  const auth = request.headers.get("Authorization");
+  if (auth === `Bearer ${deps.adminToken}`) return null;
   return Response.json({ error: "unauthorized" }, { status: 401 });
 }
 
@@ -39,6 +50,10 @@ export async function handleApi(request: Request, deps: ApiDeps): Promise<Respon
   const url = new URL(request.url);
   const path = url.pathname;
   const method = request.method;
+
+  // GET系にも認証を要求する (エクイティ・トレード履歴・判定ログも非公開情報)
+  const denied = requireAuth(request, deps);
+  if (denied) return denied;
 
   try {
     if (method === "GET") {
@@ -65,8 +80,6 @@ export async function handleApi(request: Request, deps: ApiDeps): Promise<Respon
     }
 
     if (method === "POST") {
-      const denied = requireAuth(request, deps);
-      if (denied) return denied;
       switch (path) {
         case "/api/params": {
           const body = (await request.json()) as { doc: unknown; note?: string };
@@ -77,17 +90,20 @@ export async function handleApi(request: Request, deps: ApiDeps): Promise<Respon
         }
         case "/api/kill": {
           const body = (await request.json().catch(() => ({}))) as { reason?: string };
-          if (!deps.killSwitchActions) {
-            return Response.json({ error: "OANDA未設定のためkillは記録のみ" }, { status: 503 });
-          }
-          const ks = new KillSwitch(
-            deps.killSwitchActions,
-            deps.notifier,
-            deps.store,
-            deps.flattenOnKill,
-          );
+          // OANDA未設定でも取引ロックだけは必ず永続化する (ロック最優先の原則)。
+          // ドライラン期間中のキルスイッチ・リハーサルもこれで成立する
+          const actions = deps.killSwitchActions ?? {
+            cancelAllOrders: async () => 0,
+            closeAllPositions: async () => {},
+          };
+          const ks = new KillSwitch(actions, deps.notifier, deps.store, deps.flattenOnKill);
           await ks.trip(body.reason ?? "管理画面から手動発動");
-          return Response.json({ ok: true });
+          if (!deps.killSwitchActions) {
+            await deps.notifier.warn(
+              "OANDA未設定のため市場操作 (注文キャンセル/クローズ) はスキップ。ロックのみ記録しました",
+            );
+          }
+          return Response.json({ ok: true, marketActions: deps.killSwitchActions !== null });
         }
         case "/api/kill/reset": {
           await KillSwitch.reset(deps.store);

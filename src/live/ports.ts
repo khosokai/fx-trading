@@ -87,6 +87,12 @@ export interface BotDb {
   listIntentsByStatus(status: IntentStatus): Promise<IntentRow[]>;
   /** transaction台帳への冪等取り込み (INSERT OR IGNORE) + trades導出更新 */
   ingestTransactions(txns: OandaTransaction[]): Promise<void>;
+  /**
+   * 永続台帳からclient_order_idで約定txnを引く。
+   * unknown intentの解決は必ずこちらを使う (揮発的なsinceidレスポンスで判定すると、
+   * カーソル前進とintent解決の間でWorkerが死んだ場合に誤orphan判定になる)
+   */
+  findTransactionByClientOrderId(clientOrderId: string): Promise<{ id: string } | null>;
   insertEquitySnapshot(s: EquitySnapshotInsert): Promise<void>;
   getParams(): Promise<{ version: number; doc: ParamsDoc } | null>;
 }

@@ -11,13 +11,16 @@ const token = () => localStorage.getItem("adminToken") ?? "";
 
 async function api(path, options = {}) {
   const headers = { ...(options.headers ?? {}) };
-  if (options.method === "POST") {
-    headers["Content-Type"] = "application/json";
-    if (token()) headers["Authorization"] = `Bearer ${token()}`;
-  }
+  // fail-closed認証: GET含む全リクエストにADMIN_TOKENを付ける
+  if (token()) headers["Authorization"] = `Bearer ${token()}`;
+  if (options.method === "POST") headers["Content-Type"] = "application/json";
   const res = await fetch(path, { ...options, headers });
   const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
+  if (!res.ok) {
+    const err = new Error(body.error ?? `HTTP ${res.status}`);
+    err.status = res.status;
+    throw err;
+  }
   return body;
 }
 
@@ -193,9 +196,9 @@ async function safety() {
     </section>
     <section>
       <h3>ローカル設定</h3>
-      <p><input type="password" id="admin-token" placeholder="ADMIN_TOKEN (Access未設定時のみ)" value="${esc(token())}" />
+      <p><input type="password" id="admin-token" placeholder="ADMIN_TOKEN" value="${esc(token())}" />
       <button id="save-token">保存</button>
-      <span class="muted">Cloudflare Access配下ではトークン不要。</span></p>
+      <span class="muted">fail-closed認証: 全API (GET含む) にADMIN_TOKENが必要。Cloudflare Access移行はJWT署名検証の実装後。</span></p>
     </section>`;
 
   document.getElementById("save-token")?.addEventListener("click", () => {
@@ -235,6 +238,17 @@ async function route() {
   try {
     await (PAGES[page] ?? dashboard)();
   } catch (err) {
+    if (err.status === 401 || err.status === 503) {
+      main.innerHTML = `<h2>認証が必要です</h2>
+        <p class="muted">${esc(err.message)}</p>
+        <p><input type="password" id="login-token" placeholder="ADMIN_TOKEN" size="40" />
+        <button class="primary" id="login-save">保存して再読み込み</button></p>`;
+      document.getElementById("login-save").addEventListener("click", () => {
+        localStorage.setItem("adminToken", document.getElementById("login-token").value);
+        route();
+      });
+      return;
+    }
     main.innerHTML = `<p class="neg">読み込みエラー: ${esc(err.message)}</p>`;
   }
 }

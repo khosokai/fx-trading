@@ -25,6 +25,11 @@ OANDA v20 API による FX 自動デイトレードシステム。TypeScript一�
    上位足は必ず `src/core/aggregate.ts` でM1から集計
 7. **研究の規律** (`docs/research.md`): 採択基準は事前固定・両ペアWFA必須・
    スプレッド感度で棄却・全戦略不採択ならlive見送り (締切より基準)
+8. **認証はfail-closed** (`worker/api.ts` requireAuth): ADMIN_TOKEN一致のみが認証。
+   ヘッダの「存在」を認証に使わない (Cf-Access-Jwt-Assertionは偽装可能。
+   Access移行はJWT署名検証の実装が前提)
+9. **unknown intentの解決は永続台帳 (client_order_id) に対して行う**。
+   揮発的なAPIレスポンスで orphan 判定しない (誤「未達」通知の回帰テストあり)
 
 ## 構成の要点
 

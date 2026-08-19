@@ -149,8 +149,8 @@ export class D1BotDb implements BotDb {
       await this.db
         .prepare(
           `INSERT OR IGNORE INTO oanda_transactions
-             (id, ts, type, instrument, units, price, pl, financing, reason, raw)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             (id, ts, type, instrument, units, price, pl, financing, reason, client_order_id, raw)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .bind(
           id,
@@ -162,6 +162,7 @@ export class D1BotDb implements BotDb {
           t.pl !== undefined ? Number(t.pl) : null,
           t.financing !== undefined ? Number(t.financing) : null,
           t.reason ?? null,
+          t.clientOrderID ?? t.clientExtensions?.id ?? null,
           JSON.stringify(t),
         )
         .run();
@@ -204,6 +205,14 @@ export class D1BotDb implements BotDb {
         }
       }
     }
+  }
+
+  async findTransactionByClientOrderId(clientOrderId: string): Promise<{ id: string } | null> {
+    const row = await this.db
+      .prepare("SELECT id FROM oanda_transactions WHERE client_order_id = ? LIMIT 1")
+      .bind(clientOrderId)
+      .first<{ id: number }>();
+    return row ? { id: String(row.id) } : null;
   }
 
   async insertEquitySnapshot(s: EquitySnapshotInsert): Promise<void> {

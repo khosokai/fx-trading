@@ -70,6 +70,10 @@ Workerが死んだ場合は常に**機会損失側**に倒れる (二重発注�
   (回帰テストあり)。結果不明のintentは `unknown` とし、次tickの照合で解決する
 - 台帳 (`oanda_transactions`) は transaction id 主キー + INSERT OR IGNORE で
   取り込みが冪等 → 並行tickでも二重計上されない
+- **unknown intentの解決は永続台帳の `client_order_id` に対して行う** (揮発的な
+  sinceidレスポンスで判定すると、カーソル前進とintent解決の間でWorkerが死んだ
+  場合に約定済み注文を「未達」と誤orphan判定する。回帰テストあり)。
+  orphan確定には3分の猶予を置き、OANDA側の遅延処理txnを待つ
 - `stopLossOnFill` は必須 (エンジン/発注層が強制)。Workerが死んでも
   サーバー側SLが最大エクスポージャを守る
 
@@ -100,10 +104,17 @@ Workerが死んだ場合は常に**機会損失側**に倒れる (二重発注�
 
 ## 管理画面
 
-Workers Static Assets + vanilla JS + uPlot (ベンダリング済み)。認証は
-Cloudflare Access を前提とし、変更系APIはAccessのJWTヘッダ (または
-フォールバックの `ADMIN_TOKEN`) を要求する。判定は `worker/api.ts` の
-`requireAuth` 1関数に隔離。**live開始後はGUI改修を凍結する** (運用ルール)。
+Workers Static Assets + vanilla JS + uPlot (ベンダリング済み)。
+
+**認証は fail-closed** (`worker/api.ts` の `requireAuth` 1関数に隔離):
+- GET含む全APIで `ADMIN_TOKEN` との Bearer 一致のみを認証とみなす
+- `ADMIN_TOKEN` 未設定なら全リクエスト拒否 (設定漏れで公開される事故を構造的に防ぐ)
+- **`Cf-Access-Jwt-Assertion` ヘッダの「存在」は認証に使わない** (誰でも偽装可能)。
+  Cloudflare Access へ移行する際は WebCrypto でJWTのRS256署名をJWKSに対して
+  検証する実装を追加してからトークン要求を緩める。それまでAccess配下でも
+  ADMIN_TOKEN併用
+
+**live開始後はGUI改修を凍結する** (運用ルール)。
 
 ## Goldステータス取引量
 

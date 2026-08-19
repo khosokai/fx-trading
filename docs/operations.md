@@ -27,14 +27,18 @@ wrangler secret put OANDA_ACCOUNT_ID
 wrangler secret put NOTIFY_WEBHOOK_URL
 wrangler secret put HEALTHCHECK_URL_BOT
 wrangler secret put HEALTHCHECK_URL_SUPERVISOR
-wrangler secret put ADMIN_TOKEN         # Cloudflare Access設定までのフォールバック
+wrangler secret put ADMIN_TOKEN         # 必須 (未設定だと全APIが503 = fail-closed)
 
 npm run worker:deploy
 ```
 
 - **Workers Paidプランが必須** (無料プランはCronのCPU 10msのみ)
-- 管理画面は workers.dev URL。Cloudflare Access (Zero Trust) で `/*` を保護する
+- **ADMIN_TOKENは必須** (十分に長いランダム文字列を使う。例: `openssl rand -hex 32`)。
+  GET含む全APIがトークン要求する。管理画面は初回アクセス時に入力を促す
+- Cloudflare Access (Zero Trust) での `/*` 保護は推奨だが、AccessのJWT署名検証を
+  実装するまでは**Access配下でもADMIN_TOKENを外さない** (ヘッダ存在は偽装可能)
 - ローカル検証: `npm run worker:dev` → `curl "localhost:8787/__scheduled?cron=*+*+*+*+*"`
+  (ローカルのトークンは `.dev.vars` の `ADMIN_TOKEN`)
 
 ## OANDAトークンの扱い
 
@@ -59,6 +63,8 @@ OANDAのパーソナルアクセストークンには**権限スコープの分�
 - 発動: 管理画面 (KILL入力) / supervisorの自動発動 (日次損失・最大DD超過)
 - 発動時: 取引ロック永続化 → 全注文キャンセル → (SAFETY_FLATTEN_ON_KILL=true なら)
   全ポジションクローズ。**サーバー側SL/TPは残る**
+- OANDA未設定 (ドライラン検証中) でも**ロックだけは必ず記録される**
+  (市場操作はスキップした旨を通知)。リハーサルはこの状態でも成立する
 - 解除: 管理画面のRESETのみ (人間の明示操作)。解除前に OANDA の建玉と
   `unknown` intent が残っていないことを確認する
 

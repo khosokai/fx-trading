@@ -5,6 +5,7 @@ import { isWeekendClosed } from "../core/sessions.ts";
 import type { Signal, StrategyContext } from "../core/strategy.ts";
 import { isAmbiguousSendError } from "../httpClient.ts";
 import type { OandaClient } from "../oanda/client.ts";
+import type { SafetyConfig } from "../safety/config.ts";
 import type { Notifier } from "../safety/notifier.ts";
 import type { RiskManager } from "../safety/riskManager.ts";
 import { STATE_KEYS, type StateStore } from "../safety/state.ts";
@@ -33,6 +34,8 @@ export interface BotDeps {
   db: BotDb;
   store: StateStore;
   riskManager: RiskManager;
+  /** ハードリミット。GUI編集可能なentry.riskPctはここのmaxRiskPctでクランプされる */
+  safetyConfig: SafetyConfig;
   notifier: Notifier;
   live: boolean;
 }
@@ -63,7 +66,7 @@ export async function runOnce(deps: BotDeps, nowMs: number = Date.now()): Promis
 
   // 3. transaction照合 (新規発注の検討より必ず先に行う。
   //    POSTが結果不明で終わった前回tickの回復パス)
-  await reconcile(deps);
+  await reconcile(deps, nowMs);
 
   // パラメータと戦略の構築
   const paramsRow = await db.getParams();
@@ -148,10 +151,23 @@ export async function runOnce(deps: BotDeps, nowMs: number = Date.now()): Promis
   return result;
 }
 
-/** transactions/sinceid で台帳を取り込み、unknown intentを解決する */
-async function reconcile(deps: BotDeps): Promise<void> {
+/** POST前に死んだpending intentをunknownへ降格するまでの猶予 */
+const PENDING_TO_UNKNOWN_MS = 90_000;
+/** unknownをorphan確定するまでの猶予 (OANDA側の遅延処理txnが台帳に載るのを待つ) */
+const UNKNOWN_TO_ORPHAN_MS = 180_000;
+
+/**
+ * transactions/sinceid で台帳を取り込み、unknown intentを解決する。
+ * (テストのためexport。runOnceの一部としてのみ呼ばれる)
+ *
+ * 【重要】unknownの解決は揮発的な res.transactions ではなく、永続化済みの
+ * oanda_transactions 台帳 (client_order_id) に対して行う。カーソル前進と
+ * intent解決の間でWorkerが死んでも、次tickで台帳から正しくfilledと判定できる
+ * (レスポンスだけ見ると「もう返ってこないtxn」を根拠に誤orphanしてしまう)。
+ */
+export async function reconcile(deps: BotDeps, nowMs: number = Date.now()): Promise<void> {
   const { client, db, store, notifier } = deps;
-  let lastId = await store.get(STATE_KEYS.lastTransactionId);
+  const lastId = await store.get(STATE_KEYS.lastTransactionId);
   if (lastId === null) {
     // 初回: 現在のlastTransactionIDから開始 (過去の取込はしない)
     const summary = await client.getAccountSummary();
@@ -162,30 +178,29 @@ async function reconcile(deps: BotDeps): Promise<void> {
   if (res.transactions.length > 0) {
     await db.ingestTransactions(res.transactions);
   }
+  // カーソルは取り込み成功の後にのみ前進 (途中で死んでも再取り込みは冪等)
   await store.set(STATE_KEYS.lastTransactionId, res.lastTransactionID);
 
-  // unknown intent の解決: clientOrderID が台帳に現れたか
+  // unknown intent の解決: 永続台帳にclientOrderIDが現れたか
   const unknowns = await db.listIntentsByStatus("unknown");
   for (const intent of unknowns) {
-    const match = res.transactions.find(
-      (t) =>
-        t.clientOrderID === intent.clientId || t.clientExtensions?.id === intent.clientId,
-    );
-    if (match) {
-      await db.updateIntent(intent.clientId, { status: "filled", oandaTxnId: match.id });
+    const txn = await db.findTransactionByClientOrderId(intent.clientId);
+    if (txn) {
+      await db.updateIntent(intent.clientId, { status: "filled", oandaTxnId: txn.id });
       await notifier.warn(
-        `結果不明だった発注 ${intent.clientId} は約定していました (txn ${match.id})`,
+        `結果不明だった発注 ${intent.clientId} は約定していました (txn ${txn.id})`,
       );
-    } else {
-      // 台帳に現れない = サーバーに届いていなかった (機会損失側に倒れた)
+    } else if (Date.parse(intent.ts) < nowMs - UNKNOWN_TO_ORPHAN_MS) {
+      // 猶予を過ぎても台帳に現れない = サーバーに届いていなかった (機会損失側)
       await db.updateIntent(intent.clientId, { status: "orphaned" });
       await notifier.info(`結果不明だった発注 ${intent.clientId} は未達と確認 (orphaned)`);
     }
+    // 猶予内は unknown のまま次tickへ持ち越す (遅延処理の約定を待つ)
   }
   // pendingのまま残っているintent (POST前にWorkerが死んだ) はunknown扱いに落とす
   const pendings = await db.listIntentsByStatus("pending");
   for (const intent of pendings) {
-    if (Date.parse(intent.ts) < Date.now() - 90_000) {
+    if (Date.parse(intent.ts) < nowMs - PENDING_TO_UNKNOWN_MS) {
       await db.updateIntent(intent.clientId, { status: "unknown" });
     }
   }
@@ -294,11 +309,13 @@ async function runStrategyTick(deps: BotDeps, input: StrategyTickInput): Promise
     return false;
   }
 
-  // サイジング (エンジンと同じ式)
+  // サイジング (エンジンと同じ式)。GUI編集可能なriskPctは
+  // ハードリミットSAFETY_MAX_RISK_PCTで必ずクランプする (タイプミス防衛)
   const usdJpy = await resolveUsdJpyRate(client, instrument, input.pricing);
   const pipValue = pipValueJpyPerUnit(instrument, usdJpy);
   const riskFraction = clamp01(decision.riskFraction ?? 1);
-  const riskBudget = input.nav * (entry.riskPct / 100) * riskFraction;
+  const riskPct = Math.min(entry.riskPct, deps.safetyConfig.maxRiskPct);
+  const riskBudget = input.nav * (riskPct / 100) * riskFraction;
   let units = Math.floor(riskBudget / (slPips * pipValue));
   units = Math.min(units, Math.floor((input.nav * 25) / ((ask * pipValue) / pip)));
   if (units < 1) {

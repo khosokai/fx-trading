@@ -10,6 +10,7 @@ import {
   type TradeRecord,
 } from "./engine.ts";
 import { computeMetrics, type Metrics } from "./metrics.ts";
+import { assertCompleteness } from "../data/completeness.ts";
 
 /**
  * ウォークフォワード分析 (WFA)。gmo-coinから移植。
@@ -60,6 +61,13 @@ export interface WalkForwardOptions {
   testDays: number;
   config?: BacktestConfig;
   runOptions?: RunOptions;
+  /**
+   * データ完全性ゲートの欠損率閾値 (デフォルト0.2)。false で無効化できるが、
+   * それは合成データのテスト専用 — 実データの研究で無効化してはならない
+   * (docs/research.md 2026-08-21: EUR/USD 11ヶ月欠損に4ラウンド気づかなかった
+   * 事故の再発防止として、WFA自体が不完全データを拒否する)
+   */
+  completeness?: number | false;
 }
 
 export function walkForward(
@@ -73,6 +81,10 @@ export function walkForward(
   const timeframe = candidates[0]!.timeframe;
   if (!candidates.every((c) => c.timeframe === timeframe)) {
     throw new Error("candidatesの時間軸が揃っていません");
+  }
+  // 不完全データでのWFAを構造的に禁止する (実行を拒否。閾値超の月を列挙して投げる)
+  if (opts.completeness !== false) {
+    assertCompleteness(candles, timeframe, opts.completeness);
   }
   const config = opts.config ?? DEFAULT_CONFIG;
   const runOptions = opts.runOptions ?? {};

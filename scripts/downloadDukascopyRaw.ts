@@ -23,7 +23,12 @@ import { LocalChunkStore, monthRange } from "../src/data/store.ts";
  *   mergeBidAsk を通すため、保存形式・意味は既存チャンクと完全互換
  * - 429を受けたら即座に中断する (リトライ連射はBANを更新するだけ)。月次保存なので
  *   再実行すれば続きから埋まる
- * - 当月 (未確定) はこのスクリプトでは触らない
+ * - 当月 (未確定) はデフォルトでは触らない。--current 指定時は当月と前月の
+ *   チャンクを丸ごと取り直す (観察フェーズの週次更新用。前月も取り直すのは
+ *   月替わり時の部分保存チャンクが恒久欠損になるのを防ぐため)
+ * - 【前提: 週次実行】5週間以上空けて月境界を2つ跨ぐと、跨いだ先の月は
+ *   「前月」から外れて部分チャンクが残る。その場合は該当月のチャンクを
+ *   削除して再取得すること (docs/research.md 観察フェーズ運用の例外則)
  */
 
 const INSTRUMENT_MAP: Record<string, { code: string; factor: number }> = {
@@ -182,17 +187,31 @@ async function main(): Promise<void> {
     return;
   }
 
-  const fromMs = Date.parse(args[1] ?? "2021-01-01T00:00:00Z");
-  const toMs = Math.min(Date.parse(args[2] ?? "2100-01-01"), Date.now());
+  // --current: 当月 (+前月が未保存なら前月も) を取り直す。週次の観察フェーズ更新用
+  const refreshCurrent = args.includes("--current");
+  const dateArgs = args.slice(1).filter((a) => a !== "--current");
+  const fromMs = Date.parse(dateArgs[0] ?? "2021-01-01T00:00:00Z");
+  const toMs = Math.min(Date.parse(dateArgs[1] ?? "2100-01-01"), Date.now());
   if (!Number.isFinite(fromMs) || !Number.isFinite(toMs)) {
     throw new Error("日付の形式が不正です (YYYY-MM-DD)");
   }
 
   const store = new LocalChunkStore(DATA_DIR);
   const existing = new Set(await store.listMonths(instrument));
-  const currentMonth = new Date().toISOString().slice(0, 7);
-  const months = monthRange(fromMs, toMs).filter((mo) => !existing.has(mo) && mo !== currentMonth);
-  console.log(`=== ${instrument} (raw datafeed): 欠損 ${months.length}ヶ月を補完 (保存済み ${existing.size}ヶ月) ===`);
+  const now = new Date();
+  const currentMonth = now.toISOString().slice(0, 7);
+  // 前月も無条件に取り直す: 月替わり時、前月チャンクは部分保存 (最終実行日まで) の
+  // まま listMonths に「保存済み」と映り、月末の数日が恒久欠損する
+  // (PR #6レビュー指摘)。週次実行前提ならこれで穴は構造的に閉じる
+  const prevMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1))
+    .toISOString()
+    .slice(0, 7);
+  const months = monthRange(fromMs, toMs).filter(
+    (mo) =>
+      (!existing.has(mo) && mo !== currentMonth) ||
+      (refreshCurrent && (mo === currentMonth || mo === prevMonth)),
+  );
+  console.log(`=== ${instrument} (raw datafeed): 対象 ${months.length}ヶ月 (保存済み ${existing.size}ヶ月${refreshCurrent ? "、当月取り直し" : ""}) ===`);
 
   for (const month of months) {
     process.stdout.write(`${instrument} ${month} ... `);

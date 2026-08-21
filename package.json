@@ -14,6 +14,7 @@
     "worker:deploy": "wrangler deploy",
     "worker:tail": "wrangler tail",
     "data:download": "node --env-file-if-exists=.env scripts/downloadDukascopy.ts",
+    "observe": "node scripts/downloadDukascopyRaw.ts EUR_USD --current && node scripts/downloadDukascopyRaw.ts USD_JPY --current && node scripts/observeForward.ts",
     "backtest": "node --env-file-if-exists=.env src/examples/backtest.ts",
     "research": "node --env-file-if-exists=.env src/examples/research.ts",
     "verify:parity": "node --env-file-if-exists=.env src/examples/verifyParity.ts",

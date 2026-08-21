@@ -7,7 +7,9 @@ OANDA v20 API による FX 自動デイトレードシステム。TypeScript一�
 ## コマンド
 
 - `npm run typecheck` / `npm test` — 常にgreenを保つ (エンジン/セッション/クライアントの回帰テスト)
-- `npm run data:download` — Dukascopy M1 Bid/Ask取得 (USD_JPY, EUR_USD)
+- `npm run data:download` — Dukascopy M1 Bid/Ask取得 (USD_JPY, EUR_USD)。
+  429で止まる場合は `scripts/downloadDukascopyRaw.ts` (生datafeed直読みフォールバック、
+  整合検証済み。経緯は docs/research.md 2026-08-21)
 - `npm run backtest` / `npm run research` — バックテスト / WFA+採択判定
 - `npm run worker:dev` — ローカルWorker (`curl "localhost:8787/__scheduled?cron=*+*+*+*+*"` でcron発火)
 

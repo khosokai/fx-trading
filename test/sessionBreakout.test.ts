@@ -200,3 +200,70 @@ describe("sessionBreakout v3 (R5事前登録フィルタ)", () => {
     assert.equal(d.target, 0);
   });
 });
+
+describe("sessionBreakout v4 (R6事前登録)", () => {
+  /**
+   * 東京前半 (0:00-4:00Z) は広いレンジ150.0-150.5、ロンドン直前窓
+   * (5:00-8:00現地 = 夏時間4:00-7:00Z) は狭い箱150.2-150.3、
+   * ロンドン寄付き (7:00Z) に150.38へ上抜けする日
+   */
+  function boxDay(): BidAskCandle[] {
+    const bars = (openZ: string, count: number, high: number, low: number): BidAskCandle[] => {
+      const open = Date.parse(openZ);
+      const m = (high + low) / 2;
+      const amp = (high - low) / 2;
+      const out: BidAskCandle[] = [];
+      for (let i = 0; i < count; i++) {
+        const c = m + (i % 2 === 0 ? amp / 2 : -amp / 2);
+        out.push({
+          time: open + i * M15,
+          bid: { o: c, h: Math.min(high, c + amp), l: Math.max(low, c - amp), c },
+          ask: { o: c + 0.004, h: Math.min(high, c + amp) + 0.004, l: Math.max(low, c - amp) + 0.004, c: c + 0.004 },
+          volume: 10,
+        });
+      }
+      return out;
+    };
+    return [
+      ...bars("2026-07-15T00:00:00Z", 16, 150.5, 150.0), // 東京前半: 広い
+      ...bars("2026-07-15T04:00:00Z", 12, 150.3, 150.2), // ロンドン直前3時間: 狭い箱
+      ...bars("2026-07-15T07:00:00Z", 1, 150.4, 150.35), // 寄付きで箱上抜け (close≈150.375)
+    ];
+  }
+  const R6A = {
+    ...V2,
+    atrBufferMult: 0,
+    minRangePips: 10,
+    maxRangePips: 60,
+    rangeStartLondonMin: 5 * 60,
+    rangeEndLondonMin: 8 * 60,
+  };
+
+  it("R6-A: 箱をロンドン直前窓で取ると、東京レンジ内でも箱の上抜けでロングする", () => {
+    const box = makeSessionBreakout(R6A);
+    const tokyo = makeSessionBreakout({ ...V2, atrBufferMult: 0 });
+    const candles = boxDay();
+    assert.equal(box.decide(ctx(candles, 0)).target, 1); // 箱高値150.3を上抜け
+    assert.equal(tokyo.decide(ctx(candles, 0)).target, 0); // 東京レンジ150.5の内側
+  });
+
+  it("R6-B: tpR省略時はTPなし (SLのみ) の注文になる", () => {
+    const { tpR: _tpR, ...noTp } = V2;
+    const s = makeSessionBreakout({ ...noTp, atrBufferMult: 0 });
+    const d = s.decide(ctx(dayWithLondonClose(150.75, "2026-07-15T07:00:00Z"), 0));
+    assert.equal(d.target, 1);
+    assert.ok((d.stopLossPips ?? 0) > 0);
+    assert.equal(d.takeProfitPips, undefined);
+  });
+
+  it("R6-B: exitNy=16:00はNY午後もポジションを保持し、16:00以降に決済する", () => {
+    const s = makeSessionBreakout({ ...V2, exitNyMin: 16 * 60 });
+    // 19:00Z = NY 15:00 EDT → 保持
+    const hold = s.decide(ctx(dayWithLondonClose(150.75, "2026-07-15T19:00:00Z"), 1));
+    assert.equal(hold.target, 1);
+    // 20:15Z = NY 16:15 EDT → 強制フラット
+    const exit = s.decide(ctx(dayWithLondonClose(150.75, "2026-07-15T20:15:00Z"), 1));
+    assert.equal(exit.target, 0);
+    assert.equal(exit.reason, "time-exit-ny");
+  });
+});

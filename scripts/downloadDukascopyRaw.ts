@@ -26,6 +26,9 @@ import { LocalChunkStore, monthRange } from "../src/data/store.ts";
  * - 当月 (未確定) はデフォルトでは触らない。--current 指定時は当月と前月の
  *   チャンクを丸ごと取り直す (観察フェーズの週次更新用。前月も取り直すのは
  *   月替わり時の部分保存チャンクが恒久欠損になるのを防ぐため)
+ * - 【前提: 週次実行】5週間以上空けて月境界を2つ跨ぐと、跨いだ先の月は
+ *   「前月」から外れて部分チャンクが残る。その場合は該当月のチャンクを
+ *   削除して再取得すること (docs/research.md 観察フェーズ運用の例外則)
  */
 
 const INSTRUMENT_MAP: Record<string, { code: string; factor: number }> = {

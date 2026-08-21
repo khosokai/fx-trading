@@ -22,6 +22,11 @@ import type { Decision, Strategy, StrategyContext } from "../core/strategy.ts";
  * - rangePercentileMin/rangePercentileLookback (R5-A): 当日レンジ幅が過去N取引日の
  *   pパーセンタイル以上の日のみエントリー (ボラティリティレジームフィルタ)
  * - trendEmaPeriod (R5-B): 終値EMA方向と一致するブレイクのみエントリー
+ *
+ * v4オプション (研究第6ラウンド、事前登録 2026-08-21):
+ * - rangeStartLondonMin/rangeEndLondonMin (R6-A): レンジ箱をロンドン現地の
+ *   時間窓で集計 (欧州オープニングレンジ)。省略時は東京セッション全体
+ * - tpR省略 (R6-B): TPなし。SLと時間切れのみで決済し利益を伸ばす
  */
 export interface SessionBreakoutParams {
   timeframe: Timeframe;
@@ -31,8 +36,8 @@ export interface SessionBreakoutParams {
   maxRangePips: number;
   /** SLのキャップ (pips) */
   maxSlPips: number;
-  /** TP = SL幅 × tpR */
-  tpR: number;
+  /** TP = SL幅 × tpR。省略時はTPなし (SLと時間切れのみで決済。R6-B) */
+  tpR?: number;
   /** ブレイク確認バッファ = ATR(14) × この係数 (省略時0 = v1挙動) */
   atrBufferMult?: number;
   /** エントリー許可の終端 (ロンドン現地の分。省略時はセッション終了まで) */
@@ -52,6 +57,12 @@ export interface SessionBreakoutParams {
    * ロングは close > EMA、ショートは close < EMA の時のみ許可 (省略時は無効)
    */
   trendEmaPeriod?: number;
+  /**
+   * v4 R6-A: レンジ箱をロンドン現地 [start, end) 分の窓で集計する
+   * (欧州オープニングレンジ)。両方省略時は東京セッション全体 (従来挙動)
+   */
+  rangeStartLondonMin?: number;
+  rangeEndLondonMin?: number;
 }
 
 interface DayRange {
@@ -68,7 +79,22 @@ export function makeSessionBreakout(params: SessionBreakoutParams): Strategy {
   const rangePercentileMin = params.rangePercentileMin;
   const rangePercentileLookback = params.rangePercentileLookback ?? 20;
   const trendEmaPeriod = params.trendEmaPeriod;
+  const rangeStartLondonMin = params.rangeStartLondonMin;
+  const rangeEndLondonMin = params.rangeEndLondonMin;
   const tfMs = TF_MS[timeframe];
+
+  /** レンジ箱に含めるバーか (open/close両端が窓内)。R6-A窓が優先、なければ東京 */
+  const inRangeBox = (openMs: number, closeMs: number): boolean => {
+    if (rangeStartLondonMin !== undefined && rangeEndLondonMin !== undefined) {
+      const o = zonedTime(openMs, "Europe/London");
+      if (o.weekday === 0 || o.weekday === 6) return false;
+      const c = zonedTime(closeMs, "Europe/London");
+      const om = o.hour * 60 + o.minute;
+      const cm = c.hour * 60 + c.minute;
+      return om >= rangeStartLondonMin && cm < rangeEndLondonMin;
+    }
+    return inSession(openMs, "tokyo") && inSession(closeMs, "tokyo");
+  };
   // 取引日→東京レンジ のキャッシュ (candles配列ごと)
   const cache = new WeakMap<BidAskCandle[], Map<string, DayRange>>();
   const atrCache = new WeakMap<BidAskCandle[], number[]>();
@@ -110,7 +136,7 @@ export function makeSessionBreakout(params: SessionBreakoutParams): Strategy {
       const c = candles[j]!;
       const closeTime = c.time + tfMs;
       if (tradingDay(c.time) !== day) break;
-      if (inSession(c.time, "tokyo") && inSession(closeTime - 1, "tokyo")) {
+      if (inRangeBox(c.time, closeTime - 1)) {
         const m = mid(c);
         high = Math.max(high, m.h);
         low = Math.min(low, m.l);
@@ -159,10 +185,11 @@ export function makeSessionBreakout(params: SessionBreakoutParams): Strategy {
     (entryEndLondonMin !== undefined ? `_ee${entryEndLondonMin}` : "") +
     (exitNyMin !== undefined ? `_xny${exitNyMin}` : "") +
     (rangePercentileMin !== undefined ? `_volp${rangePercentileMin}` : "") +
-    (trendEmaPeriod !== undefined ? `_tema${trendEmaPeriod}` : "");
+    (trendEmaPeriod !== undefined ? `_tema${trendEmaPeriod}` : "") +
+    (rangeStartLondonMin !== undefined ? `_box${rangeStartLondonMin}-${rangeEndLondonMin}` : "");
 
   return {
-    id: `sessbrk_${timeframe}_r${minRangePips}-${maxRangePips}_sl${maxSlPips}_tp${tpR}${v2Suffix}`,
+    id: `sessbrk_${timeframe}_r${minRangePips}-${maxRangePips}_sl${maxSlPips}_tp${tpR ?? "none"}${v2Suffix}`,
     name: `SessionBreakout ${timeframe}${v2Suffix}`,
     timeframe,
     // 東京セッション6時間 + ATR(14)分のマージン。R5-Aはレンジ参照日数、
@@ -244,7 +271,7 @@ export function makeSessionBreakout(params: SessionBreakoutParams): Strategy {
         return {
           target: 1,
           stopLossPips: slPips,
-          takeProfitPips: slPips * tpR,
+          ...(tpR !== undefined ? { takeProfitPips: slPips * tpR } : {}), // R6-B: TPなし可
           reason: `break>${upper.toFixed(3)} (range ${rangePips.toFixed(1)}p)`,
         };
       }
@@ -254,7 +281,7 @@ export function makeSessionBreakout(params: SessionBreakoutParams): Strategy {
         return {
           target: -1,
           stopLossPips: slPips,
-          takeProfitPips: slPips * tpR,
+          ...(tpR !== undefined ? { takeProfitPips: slPips * tpR } : {}),
           reason: `break<${lower.toFixed(3)} (range ${rangePips.toFixed(1)}p)`,
         };
       }

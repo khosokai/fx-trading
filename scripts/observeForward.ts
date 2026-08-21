@@ -25,6 +25,8 @@ import { makeSessionBreakout } from "../src/strategies/sessionBreakout.ts";
  * 3. 事前固定の昇格/失格条件と突合してレポート
  *
  * 【名簿は閉じたリスト。候補の追加・条件の変更はresearch.mdの改定なしに行わない】
+ * 【実行後、更新された reports/observation/*.json をコミットすること —
+ *   git履歴が判定ログの監査証跡であり、データ改訂検出の基準でもある】
  */
 
 const OBS_START_MS = Date.parse("2026-08-22T00:00:00Z");
@@ -82,10 +84,20 @@ const ROSTER: RosterEntry[] = [
 ];
 
 async function loadLog(key: string): Promise<TradeLogEntry[]> {
+  const path = `${LOG_DIR}/${key}.json`;
+  let raw: string;
   try {
-    return JSON.parse(await readFile(`${LOG_DIR}/${key}.json`, "utf8")) as TradeLogEntry[];
-  } catch {
-    return [];
+    raw = await readFile(path, "utf8");
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === "ENOENT") return []; // 初回のみ正常
+    throw err;
+  }
+  try {
+    return JSON.parse(raw) as TradeLogEntry[];
+  } catch (err) {
+    // 破損を「ログなし」扱いにすると次回書き込みで再現性検証の基準が静かに
+    // リセットされる。必ず停止して人間が確認する (git履歴から復元可能)
+    throw new Error(`判定ログが破損しています: ${path} — 上書きせず停止。git履歴から復元すること (${err})`);
   }
 }
 
@@ -143,9 +155,14 @@ async function main(): Promise<void> {
       nowMs,
       entry.criteria,
     );
+    // WFAの最終窓は検証期間が半分経過するまで出現しないため、OOSカバー末尾は
+    // データ末尾より最大45日遅れる。「トレードなし」と「未カバー」の区別用に両方出す
+    const uncoveredDays = Math.max(0, Math.round((dataEndMs - wfa.oosTo) / 86_400_000));
     console.log(
-      `  データ末尾: ${new Date(dataEndMs).toISOString()}  新規確定: ${check.appended.length}件  累計: ${status.trades}件`,
+      `  データ末尾: ${new Date(dataEndMs).toISOString()}  OOSカバー末尾: ${new Date(wfa.oosTo).toISOString()}` +
+        (uncoveredDays > 0 ? ` (未カバー ${uncoveredDays}日)` : ""),
     );
+    console.log(`  新規確定: ${check.appended.length}件  累計: ${status.trades}件`);
     console.log(
       `  累積期待値: ${status.cumulativeExpectancyPips?.toFixed(2) ?? "—"}p/件  ` +
         `30件ローリング: 最新 ${status.latestRolling30?.toFixed(2) ?? "—"}p / 最悪 ${status.worstRolling30?.toFixed(2) ?? "—"}p ` +

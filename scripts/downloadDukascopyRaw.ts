@@ -23,8 +23,9 @@ import { LocalChunkStore, monthRange } from "../src/data/store.ts";
  *   mergeBidAsk を通すため、保存形式・意味は既存チャンクと完全互換
  * - 429を受けたら即座に中断する (リトライ連射はBANを更新するだけ)。月次保存なので
  *   再実行すれば続きから埋まる
- * - 当月 (未確定) はデフォルトでは触らない。--current 指定時のみ当月チャンクを
- *   丸ごと取り直す (観察フェーズの週次更新用)
+ * - 当月 (未確定) はデフォルトでは触らない。--current 指定時は当月と前月の
+ *   チャンクを丸ごと取り直す (観察フェーズの週次更新用。前月も取り直すのは
+ *   月替わり時の部分保存チャンクが恒久欠損になるのを防ぐため)
  */
 
 const INSTRUMENT_MAP: Record<string, { code: string; factor: number }> = {
@@ -194,9 +195,18 @@ async function main(): Promise<void> {
 
   const store = new LocalChunkStore(DATA_DIR);
   const existing = new Set(await store.listMonths(instrument));
-  const currentMonth = new Date().toISOString().slice(0, 7);
+  const now = new Date();
+  const currentMonth = now.toISOString().slice(0, 7);
+  // 前月も無条件に取り直す: 月替わり時、前月チャンクは部分保存 (最終実行日まで) の
+  // まま listMonths に「保存済み」と映り、月末の数日が恒久欠損する
+  // (PR #6レビュー指摘)。週次実行前提ならこれで穴は構造的に閉じる
+  const prevMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1))
+    .toISOString()
+    .slice(0, 7);
   const months = monthRange(fromMs, toMs).filter(
-    (mo) => (!existing.has(mo) && mo !== currentMonth) || (refreshCurrent && mo === currentMonth),
+    (mo) =>
+      (!existing.has(mo) && mo !== currentMonth) ||
+      (refreshCurrent && (mo === currentMonth || mo === prevMonth)),
   );
   console.log(`=== ${instrument} (raw datafeed): 対象 ${months.length}ヶ月 (保存済み ${existing.size}ヶ月${refreshCurrent ? "、当月取り直し" : ""}) ===`);
 

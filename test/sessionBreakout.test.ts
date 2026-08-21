@@ -117,3 +117,86 @@ describe("sessionBreakout v2", () => {
     assert.equal(d.target, 1);
   });
 });
+
+/** 指定レンジの東京セッション24本 (0:00-6:00Z = 9:00-15:00 JST) を生成 */
+function tokyoBars(openZ: string, high: number, low: number): BidAskCandle[] {
+  const open = Date.parse(openZ);
+  const mid = (high + low) / 2;
+  const amp = (high - low) / 2;
+  const out: BidAskCandle[] = [];
+  for (let i = 0; i < 24; i++) {
+    const c = mid + (i % 2 === 0 ? amp / 2 : -amp / 2);
+    out.push({
+      time: open + i * M15,
+      bid: { o: c, h: Math.min(high, c + amp), l: Math.max(low, c - amp), c },
+      ask: { o: c + 0.004, h: Math.min(high, c + amp) + 0.004, l: Math.max(low, c - amp) + 0.004, c: c + 0.004 },
+      volume: 10,
+    });
+  }
+  return out;
+}
+
+describe("sessionBreakout v3 (R5事前登録フィルタ)", () => {
+  // 過去2日 + 当日 (レンジ150.0-150.5 = 50pips) + ロンドン序盤の上ブレイク
+  function threeDays(day1Range: [number, number], day2Range: [number, number]): BidAskCandle[] {
+    const candles = [
+      ...tokyoBars("2026-07-13T00:00:00Z", day1Range[0], day1Range[1]),
+      ...tokyoBars("2026-07-14T00:00:00Z", day2Range[0], day2Range[1]),
+      ...dayWithLondonClose(150.75, "2026-07-15T07:00:00Z"),
+    ];
+    return candles;
+  }
+  const R5A = { ...V2, atrBufferMult: 0, rangePercentileMin: 50, rangePercentileLookback: 2 };
+
+  it("R5-A: 当日レンジが過去比で広ければエントリーする", () => {
+    // 過去レンジ {30p, 70p} → p50閾値=30p、当日50p ≥ 30p
+    const s = makeSessionBreakout(R5A);
+    const d = s.decide(ctx(threeDays([150.4, 150.1], [150.6, 149.9]), 0));
+    assert.equal(d.target, 1);
+  });
+
+  it("R5-A: 当日レンジが過去比で狭ければ見送る", () => {
+    // 過去レンジ {60p, 70p} → p50閾値=60p、当日50p < 60p
+    const s = makeSessionBreakout(R5A);
+    const d = s.decide(ctx(threeDays([150.7, 150.1], [150.6, 149.9]), 0));
+    assert.equal(d.target, 0);
+  });
+
+  it("R5-A: 参照日数が揃うまでは見送る", () => {
+    // 過去1日ぶんしかない (lookback=2に不足)
+    const s = makeSessionBreakout(R5A);
+    const candles = [
+      ...tokyoBars("2026-07-14T00:00:00Z", 150.4, 150.1),
+      ...dayWithLondonClose(150.75, "2026-07-15T07:00:00Z"),
+    ];
+    assert.equal(s.decide(ctx(candles, 0)).target, 0);
+  });
+
+  it("R5-B: EMAより下への上ブレイクはエントリーしない (逆行ロング禁止)", () => {
+    // ロンドン前を151.5で埋めてEMAを151付近に置き、150.75への上ブレイクを逆行にする
+    const fills: { time: number; close: number }[] = [];
+    for (let t = TOKYO_OPEN + 24 * M15; t < Date.parse("2026-07-15T07:00:00Z") - M15; t += M15) {
+      fills.push({ time: t, close: 151.5 });
+    }
+    fills.push({ time: Date.parse("2026-07-15T07:00:00Z") - M15, close: 150.3 }); // 前足はレンジ内
+    fills.push({ time: Date.parse("2026-07-15T07:00:00Z"), close: 150.75 });
+    const candles = buildDay(fills);
+    const withEma = makeSessionBreakout({ ...V2, atrBufferMult: 0, trendEmaPeriod: 8 });
+    const without = makeSessionBreakout({ ...V2, atrBufferMult: 0 });
+    assert.equal(without.decide(ctx(candles, 0)).target, 1); // フィルタなしなら入る
+    assert.equal(withEma.decide(ctx(candles, 0)).target, 0); // EMA(8)≈151.2 > 150.75
+  });
+
+  it("R5-B: EMA方向と一致する上ブレイクはエントリーする", () => {
+    const s = makeSessionBreakout({ ...V2, atrBufferMult: 0, trendEmaPeriod: 8 });
+    // 通常の上昇ブレイク: EMA(8)はレンジ内の値 < 150.75
+    const d = s.decide(ctx(dayWithLondonClose(150.75, "2026-07-15T07:00:00Z"), 0));
+    assert.equal(d.target, 1);
+  });
+
+  it("R5-B: EMA未収束ならエントリーしない", () => {
+    const s = makeSessionBreakout({ ...V2, atrBufferMult: 0, trendEmaPeriod: 5000 });
+    const d = s.decide(ctx(dayWithLondonClose(150.75, "2026-07-15T07:00:00Z"), 0));
+    assert.equal(d.target, 0);
+  });
+});

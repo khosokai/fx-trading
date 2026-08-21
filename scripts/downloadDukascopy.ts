@@ -35,8 +35,10 @@ async function downloadMonth(
     format: "json",
     volumes: true,
     ignoreFlats: true,
-    retryCount: 5,
-    pauseBetweenRetriesMs: 1000,
+    retryCount: 8,
+    // Dukascopyのレートリミット (429) 対策: バックオフを長めに取る
+    pauseBetweenRetriesMs: 5000,
+    pauseBetweenBatchesMs: 500,
   } as const;
   const bids = (await getHistoricalRates({ ...common, priceType: "bid" })) as DukascopyBar[];
   const asks = (await getHistoricalRates({ ...common, priceType: "ask" })) as DukascopyBar[];
@@ -90,6 +92,8 @@ async function main(): Promise<void> {
       } catch (err) {
         console.error(`失敗: ${err instanceof Error ? err.message : err}`);
       }
+      // レートリミット回避の月間ウェイト
+      await new Promise((resolve) => setTimeout(resolve, 3000));
     }
 
     // ギャップレポート (全期間ロードして平日欠損を確認)

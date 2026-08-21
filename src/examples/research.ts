@@ -5,7 +5,6 @@ import { formatMetrics, type Metrics } from "../backtest/metrics.ts";
 import { walkForward } from "../backtest/walkForward.ts";
 import type { Strategy } from "../core/strategy.ts";
 import { LocalChunkStore } from "../data/store.ts";
-import { makeBbRsiReversion } from "../strategies/bbRsiReversion.ts";
 import { makeDonchian } from "../strategies/donchian.ts";
 import { makeSessionBreakout } from "../strategies/sessionBreakout.ts";
 
@@ -36,46 +35,68 @@ const WFA = { trainDays: 365, testDays: 90 };
 const INSTRUMENTS = ["USD_JPY", "EUR_USD"];
 const DATA_DIR = new URL("../../data/candles", import.meta.url).pathname;
 
-/** WFAの候補セット (学習期間でこの中からシャープ最良が選ばれる) */
-function candidateSets(): { name: string; timeframe: Timeframe; candidates: Strategy[] }[] {
+interface CandidateSet {
+  name: string;
+  timeframe: Timeframe;
+  candidates: Strategy[];
+  /** セット固有のエンジン設定 (セッション限定等)。markupとは合成される */
+  configOverrides?: Partial<BacktestConfig>;
+}
+
+const DONCHIAN_PERIODS: [number, number][] = [
+  [20, 10],
+  [40, 20],
+  [80, 40],
+];
+
+function donchianSet(
+  name: string,
+  timeframe: Timeframe,
+  extra: Partial<Parameters<typeof makeDonchian>[0]> = {},
+): CandidateSet {
+  return {
+    name,
+    timeframe,
+    candidates: DONCHIAN_PERIODS.map(([e, x]) =>
+      makeDonchian({
+        timeframe,
+        entryPeriod: e,
+        exitPeriod: x,
+        atrPeriod: 14,
+        slAtrMult: 2,
+        ...extra,
+      }),
+    ),
+  };
+}
+
+/**
+ * WFAの候補セット (学習期間でこの中からシャープ最良が選ばれる)。
+ * 第3ラウンド (2026-08-20 事前登録、docs/research.md):
+ * R3-A: sessionBreakout v2 — ATRバッファ0.3 / ロンドン初動(8:00-12:00現地)限定 /
+ *        NY12:00現地で強制フラット。tpR {1.5, 2.5} のみ候補
+ * R3-B: Donchian H4 (フィルタなし) — コスト比の決定的改善を検証
+ * 過去ラウンドのセットは docs/research.md の検証ログを参照。
+ */
+function candidateSets(): CandidateSet[] {
   return [
     {
-      name: "donchian",
+      name: "R3-A_sessbrk_v2_M15",
       timeframe: "M15",
-      candidates: [
-        [20, 10],
-        [40, 20],
-        [80, 40],
-      ].map(([e, x]) =>
-        makeDonchian({ timeframe: "M15", entryPeriod: e!, exitPeriod: x!, atrPeriod: 14, slAtrMult: 2 }),
-      ),
-    },
-    {
-      name: "sessionBreakout",
-      timeframe: "M15",
-      candidates: [1.0, 1.5, 2.0].map((tpR) =>
-        makeSessionBreakout({ timeframe: "M15", minRangePips: 20, maxRangePips: 80, maxSlPips: 40, tpR }),
-      ),
-    },
-    {
-      name: "bbRsi",
-      timeframe: "M15",
-      candidates: [
-        [2, 30, 70],
-        [2.5, 25, 75],
-      ].map(([sigma, lo, hi]) =>
-        makeBbRsiReversion({
+      candidates: [1.5, 2.5].map((tpR) =>
+        makeSessionBreakout({
           timeframe: "M15",
-          bbPeriod: 20,
-          bbSigma: sigma!,
-          rsiPeriod: 14,
-          rsiLower: lo!,
-          rsiUpper: hi!,
-          atrPeriod: 14,
-          slAtrMult: 1.5,
+          minRangePips: 20,
+          maxRangePips: 80,
+          maxSlPips: 40,
+          tpR,
+          atrBufferMult: 0.3,
+          entryEndLondonMin: 12 * 60,
+          exitNyMin: 12 * 60,
         }),
       ),
     },
+    donchianSet("R3-B_donchian_H4", "H4"),
   ];
 }
 
@@ -125,6 +146,7 @@ async function main(): Promise<void> {
       for (const markup of [0, ...ACCEPTANCE.markupsToSurvive]) {
         const config: BacktestConfig = {
           ...DEFAULT_CONFIG,
+          ...(set.configOverrides ?? {}),
           spreadMarkupPips: markup,
           ...(usdJpyM1
             ? { pipValueJpyAt: makeUsdJpyLookup(usdJpyM1) }

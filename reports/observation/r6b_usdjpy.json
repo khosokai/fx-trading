@@ -28,5 +28,17 @@
   "exitTime": 1788293700000,
   "direction": 1,
   "plPips": 26.200000000000045
+ },
+ {
+  "entryTime": 1788766200000,
+  "exitTime": 1788812100000,
+  "direction": -1,
+  "plPips": 128.39999999999918
+ },
+ {
+  "entryTime": 1788938100000,
+  "exitTime": 1788941700000,
+  "direction": -1,
+  "plPips": -40.29999999999916
  }
 ]

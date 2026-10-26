@@ -40,5 +40,113 @@
   "exitTime": 1788941700000,
   "direction": -1,
   "plPips": -40.29999999999916
+ },
+ {
+  "entryTime": 1789036200000,
+  "exitTime": 1789071300000,
+  "direction": 1,
+  "plPips": 51.59999999999911
+ },
+ {
+  "entryTime": 1789124400000,
+  "exitTime": 1789129800000,
+  "direction": -1,
+  "plPips": -40.29999999999916
+ },
+ {
+  "entryTime": 1789460100000,
+  "exitTime": 1789471800000,
+  "direction": 1,
+  "plPips": -40.29999999999916
+ },
+ {
+  "entryTime": 1789550100000,
+  "exitTime": 1789582500000,
+  "direction": -1,
+  "plPips": -39.44999999999936
+ },
+ {
+  "entryTime": 1789629300000,
+  "exitTime": 1789662600000,
+  "direction": -1,
+  "plPips": -40.29999999999916
+ },
+ {
+  "entryTime": 1789974900000,
+  "exitTime": 1790021700000,
+  "direction": 1,
+  "plPips": 24.499999999997613
+ },
+ {
+  "entryTime": 1790066700000,
+  "exitTime": 1790091000000,
+  "direction": -1,
+  "plPips": -40.29999999999916
+ },
+ {
+  "entryTime": 1790238600000,
+  "exitTime": 1790280900000,
+  "direction": 1,
+  "plPips": 47.100000000000364
+ },
+ {
+  "entryTime": 1790327700000,
+  "exitTime": 1790367300000,
+  "direction": -1,
+  "plPips": 65.39999999999964
+ },
+ {
+  "entryTime": 1790582400000,
+  "exitTime": 1790626500000,
+  "direction": -1,
+  "plPips": -17.300000000000182
+ },
+ {
+  "entryTime": 1790676000000,
+  "exitTime": 1790678700000,
+  "direction": 1,
+  "plPips": -40.29999999999916
+ },
+ {
+  "entryTime": 1790927100000,
+  "exitTime": 1790972100000,
+  "direction": -1,
+  "plPips": -16.200000000000614
+ },
+ {
+  "entryTime": 1791360000000,
+  "exitTime": 1791404100000,
+  "direction": -1,
+  "plPips": 1.6999999999995907
+ },
+ {
+  "entryTime": 1791530100000,
+  "exitTime": 1791576900000,
+  "direction": 1,
+  "plPips": 1.2999999999976808
+ },
+ {
+  "entryTime": 1791789300000,
+  "exitTime": 1791836100000,
+  "direction": 1,
+  "plPips": 19.10000000000025
+ },
+ {
+  "entryTime": 1791880200000,
+  "exitTime": 1791922500000,
+  "direction": -1,
+  "plPips": -21.30000000000223
+ },
+ {
+  "entryTime": 1792400400000,
+  "exitTime": 1792440900000,
+  "direction": 1,
+  "plPips": 36.80000000000234
+ },
+ {
+  "entryTime": 1792480500000,
+  "exitTime": 1792527300000,
+  "direction": -1,
+  "plPips": -13.500000000001933
  }
 ]

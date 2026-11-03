@@ -4,5 +4,65 @@
   "exitTime": 1788279300000,
   "direction": -1,
   "plPips": 7.300000000001194
+ },
+ {
+  "entryTime": 1790150400000,
+  "exitTime": 1790180100000,
+  "direction": -1,
+  "plPips": 25.399999999999867
+ },
+ {
+  "entryTime": 1790839800000,
+  "exitTime": 1790866800000,
+  "direction": -1,
+  "plPips": 46.05000000000192
+ },
+ {
+  "entryTime": 1790928000000,
+  "exitTime": 1790936100000,
+  "direction": 1,
+  "plPips": -28.9499999999987
+ },
+ {
+  "entryTime": 1791357300000,
+  "exitTime": 1791374400000,
+  "direction": -1,
+  "plPips": 47.77499999999879
+ },
+ {
+  "entryTime": 1791443700000,
+  "exitTime": 1791468900000,
+  "direction": -1,
+  "plPips": -23.400000000000087
+ },
+ {
+  "entryTime": 1791543600000,
+  "exitTime": 1791562500000,
+  "direction": -1,
+  "plPips": 15.399999999998748
+ },
+ {
+  "entryTime": 1791875700000,
+  "exitTime": 1791908100000,
+  "direction": 1,
+  "plPips": 11.200000000000099
+ },
+ {
+  "entryTime": 1792135800000,
+  "exitTime": 1792167300000,
+  "direction": 1,
+  "plPips": -20.500000000001073
+ },
+ {
+  "entryTime": 1792487700000,
+  "exitTime": 1792503000000,
+  "direction": -1,
+  "plPips": -30.94999999999848
+ },
+ {
+  "entryTime": 1792663200000,
+  "exitTime": 1792685700000,
+  "direction": -1,
+  "plPips": 3.5000000000007248
  }
 ]
